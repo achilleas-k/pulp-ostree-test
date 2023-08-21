@@ -19,3 +19,5 @@ The script runs the following actions:
 9. Wait for the build to finish.
 
 At this point, the import of the child commit to the existing ostree repo should begin.  The test does not wait for this task to finish.
+
+NOTE: Currently the child import fails due to https://github.com/pulp/pulp_ostree/issues/279
