@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+workdir="$(pwd)"
+
+pulp_server="http://10.0.2.2:8080"
+repo_basepath="pulptest"
+
+wait_for() {
+    build_id="$1"
+    while true; do
+        info=$(sudo composer-cli --json compose info "${build_id}")
+        compose_status=$(jq -r ".[0].body.queue_status" <<< "${info}")
+
+        # Is the compose finished?
+        if [[ $compose_status != RUNNING ]] && [[ $compose_status != WAITING ]]; then
+            return
+        fi
+
+        # Wait 30 seconds and try again.
+        sleep 5
+    done
+}
+
+composer-cli blueprints push empty.toml notempty.toml
+echo "Building iot-commit"
+build_1=$(composer-cli --json compose start-ostree --ref test/iot empty iot-commit test ./pulp.toml | jq -r ".[0].body.build_id")
+
+echo "Preparing local ostree repo"
+tmpdir=$(mktemp -d)
+
+echo "Creating ostree repo in ${tmpdir}"
+cd "${tmpdir}"
+ostree init --repo .
+ostree remote add --no-gpg-verify test "${pulp_server}/pulp/content/${repo_basepath}/"
+
+echo "Waiting for ${build_1} to finish"
+wait_for "${build_1}"
+composer-cli compose status  # TODO: check if FAILED otherwise the curl below will wait forever
+
+echo "Waiting for ostree commit import"
+while ! curl -sf "${pulp_server}/pulp/content/${repo_basepath}/refs/heads/test/iot"; do
+    echo -n "."
+    sleep 5
+done
+
+ostree remote summary test
+
+cd "${workdir}"
+echo "Building child iot commit"
+build_2=$(composer-cli --json compose start-ostree --ref test/iot --url "${pulp_server}/pulp/content/${repo_basepath}" notempty iot-commit test ./pulp.toml | jq -r ".[0].body.build_id")
+
+echo "Waiting for ${build_2} to finish"
+wait_for "${build_2}"
+composer-cli compose status
+
+echo "Wait for ostree import to finish then run 'ostree remote summary test' in ${tmpdir}"
+# TODO: wait for commit ID to change?

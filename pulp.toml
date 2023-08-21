@@ -1,0 +1,8 @@
+provider = "pulp.ostree"
+
+[settings]
+server_address = "http://10.0.2.2:8080"
+repository = "test-repo"
+basepath = "pulptest"
+username = "admin"
+password = "password42"
